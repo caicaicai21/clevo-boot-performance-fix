@@ -1,0 +1,7 @@
+*.log
+*.pdb
+obj/
+bin/
+.vs/
+task-*.xml
+task-*.txt
