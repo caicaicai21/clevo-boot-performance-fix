@@ -39,8 +39,24 @@ if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $hash){throw '
 if($LASTEXITCODE -ne 0){throw 'Hardware-free self test failed; task not registered.'}
 $action=New-ScheduledTaskAction -Execute $target -WorkingDirectory $folder
 $trigger=New-ScheduledTaskTrigger -AtStartup
+$subscription=@'
+<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[Provider[@Name='Microsoft-Windows-Kernel-Boot'] and EventID=27]] and *[EventData[Data[@Name='BootType']='1']]</Select></Query></QueryList>
+'@
+
 $principal=New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -Priority 4
-Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Experimental OEM entertainment request before FnKey; tested only on one COLORFIRE MEOW R16 24H. No thermal protection changes.'|Out-Null
+$definition=New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Experimental OEM entertainment request before FnKey; tested only on one COLORFIRE MEOW R16 24H. No thermal protection changes.'
+[xml]$xml=Export-ScheduledTask -InputObject $definition
+$ns=$xml.DocumentElement.NamespaceURI
+$manager=New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+$manager.AddNamespace('t',$ns)
+$triggers=$xml.SelectSingleNode('/t:Task/t:Triggers',$manager)
+if($null -eq $triggers){throw 'Missing trigger collection; task not registered.'}
+$hybrid=$xml.CreateElement('EventTrigger',$ns)
+$hybrid.SetAttribute('id','FastStartupBootType1')
+$enabled=$xml.CreateElement('Enabled',$ns);$enabled.InnerText='true';[void]$hybrid.AppendChild($enabled)
+$eventQuery=$xml.CreateElement('Subscription',$ns);$eventQuery.InnerText=$subscription;[void]$hybrid.AppendChild($eventQuery)
+[void]$triggers.AppendChild($hybrid)
+Register-ScheduledTask -TaskName $name -Xml $xml.OuterXml|Out-Null
 Write-Host 'Installed. No hardware request executed during installation. Restart Windows to test.'
 Write-Host ('Log: '+(Join-Path $folder 'boot-v2.log'))
